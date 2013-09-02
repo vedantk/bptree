@@ -22,13 +22,13 @@
 
 #pragma once
 
-#include <stdint.h>
-
-#define ORDER 256
-
 #ifdef __cplusplus__
 extern "C" {
 #endif
+
+#include <stdint.h>
+
+#define ORDER 4
 
 struct bptree {
 	uint64_t* keys;
@@ -44,6 +44,8 @@ void* bptree_lookup(struct bptree* bpt, uint64_t key);
 void bptree_insert(struct bptree** bpt, uint64_t key, void* val);
 void* bptree_delete(struct bptree** bpt, uint64_t key);
 void bptree_free(struct bptree* bpt);
+
+void bptree_sane(struct bptree* bpt);
 
 #ifdef __cplusplus__
 } /* extern "C" */

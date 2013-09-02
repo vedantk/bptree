@@ -46,7 +46,7 @@ static struct bptree* bpt_alloc()
 		goto release0;
 	}
 
-	bpt->pointers = malloc(sizeof(void*) * ORDER);
+	bpt->pointers = calloc(ORDER, sizeof(void*));
 	if (!bpt->pointers) {
 		goto release1;
 	}
@@ -93,8 +93,8 @@ static inline int split(int x)
 static int bpt_bisect(struct bptree* bpt, uint64_t key)
 {
 	int low = 0;
-	int high = bpt->nr_keys - 2;
-	int mid = split(high);
+	int high = bpt->nr_keys - 1;
+	int mid = low + ((high - low) / 2);
 	while (!(bpt->keys[mid] <= key &&
 		(mid + 1 < bpt->nr_keys) ? (key < bpt->keys[mid + 1]) : 1))
 	{
@@ -103,8 +103,10 @@ static int bpt_bisect(struct bptree* bpt, uint64_t key)
 			bpt->keys[mid] != bpt->keys[mid + 1] : 1);
 		if (bpt->keys[mid] < key) {
 			low = mid + 1;
+		} else if (bpt->keys[mid] > key) {
+			high = mid;
 		} else {
-			high = mid - 1;
+			return mid;
 		}
 		mid = low + ((high - low) / 2);
 	}
@@ -138,6 +140,7 @@ struct bptree* bptree_search(struct bptree* bpt, uint64_t key)
 	while (!bpt->is_leaf) {
 		bpt_index(bpt, key, &kidx, &pidx);
 		bpt = bpt->pointers[pidx];
+		assert(bpt);
 		assert(bpt->nr_keys >= split(ORDER) - 1);
 	}
 	return bpt;
@@ -162,7 +165,7 @@ void* bptree_lookup(struct bptree* bpt, uint64_t key)
 	int kidx, pidx;
 	bpt = bptree_search(bpt, key);
 	bpt_index(bpt, key, &kidx, &pidx);
-	return bpt->pointers[pidx];
+	return bpt->keys[kidx] == key ? bpt->pointers[pidx] : NULL;
 }
 
 /*
@@ -170,7 +173,7 @@ void* bptree_lookup(struct bptree* bpt, uint64_t key)
  */
 static void bpt_inject(struct bptree* bpt, int pidx, uint64_t key, void* val)
 {
-	assert(bpt->nr_keys != ORDER - 1);
+	assert(bpt->nr_keys < ORDER - 1);
 	for (int i = bpt->nr_keys; i > pidx; --i) {
 		bpt->pointers[i + 1] = bpt->pointers[i];
 	}
@@ -180,7 +183,7 @@ static void bpt_inject(struct bptree* bpt, int pidx, uint64_t key, void* val)
 	}
 	bpt->keys[pidx] = key;
 	struct bptree* pred = bpt->pointers[pidx];
-	if (pred->is_leaf) {
+	if (!bpt->is_leaf && pred && pred->is_leaf) {
 		struct bptree* succ = bpt->pointers[pidx + 1];
 		succ->bpt_next = pred->bpt_next;
 		pred->bpt_next = succ;
@@ -196,16 +199,16 @@ static void bpt_split_child(struct bptree* parent, int pidx)
 	struct bptree* succ = bpt_alloc();
 	struct bptree* pred = parent->pointers[pidx];
 	succ->is_leaf = pred->is_leaf;
-	succ->nr_keys = split(ORDER - 1);
-	pred->nr_keys -= succ->nr_keys;
+	pred->nr_keys = (ORDER - 1) / 2;
+	succ->nr_keys = (ORDER - 1) - pred->nr_keys;
 
 	for (int i = 0; i < succ->nr_keys; ++i) {
 		succ->keys[i] = pred->keys[i + pred->nr_keys];
 	}
-	for (int i = 0; i <= succ->nr_keys; ++i) {
+	for (int i = 1; i <= succ->nr_keys; ++i) {
 		succ->pointers[i] = pred->pointers[i + pred->nr_keys];
 	}
-	bpt_inject(parent, pidx, pred->keys[pred->nr_keys - 1], succ);
+	bpt_inject(parent, pidx, succ->keys[0], succ);
 }
 
 /*
@@ -218,12 +221,13 @@ static void bpt_insert_nonfull(struct bptree* bpt, uint64_t key, void* val)
 		bpt_index(bpt, key, &kidx, &pidx);
 		if (BPT_P(bpt, pidx)->nr_keys == ORDER - 1) {
 			bpt_split_child(bpt, pidx);
-		}
-		if (key > bpt->keys[pidx]) {
-			++pidx;
+			if (key > bpt->keys[kidx]) {
+				++pidx;
+			}
 		}
 		bpt = bpt->pointers[pidx];
 		assert(bpt->nr_keys >= split(ORDER) - 1);
+		assert(bpt->nr_keys < ORDER);
 	}
 	bpt_index(bpt, key, &kidx, &pidx);
 	bpt_inject(bpt, pidx, key, val);
@@ -386,6 +390,24 @@ void bptree_free(struct bptree* bpt)
 		for (int i = 0; i <= bpt->nr_keys; ++i) {
 			bptree_free(bpt->pointers[i]);
 			bpt_free(bpt->pointers[i]);
+		}
+	}
+}
+
+void bptree_sane(struct bptree* bpt)
+{
+	for (int i=1; i < bpt->nr_keys; ++i) {
+		assert(bpt->keys[i] > bpt->keys[i-1]);
+	}
+	if (!bpt->is_leaf) {
+		for (int i=0; i <= bpt->nr_keys; ++i) {
+			if (BPT_P(bpt, i))
+				bptree_sane(BPT_P(bpt, i));
+		}
+		for (int i=1; i <= bpt->nr_keys; ++i) {
+			if (BPT_P(bpt, i) && BPT_P(bpt, i-1))
+				assert(BPT_P(bpt, i)->keys[0] > 
+					BPT_P(bpt, i-1)->keys[BPT_P(bpt, i-1)->nr_keys - 1]);
 		}
 	}
 }
