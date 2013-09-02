@@ -4,24 +4,22 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <math.h>
+#include <time.h>
 
 #include <queue>
 using namespace std;
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
-static int kmax = 1;
-static int cwidth = 1;
-
 int bpt_width(struct bptree* bpt)
 {
-	return 3 + int(bpt->nr_keys) * (cwidth + 2);
+	return 3 + int(bpt->nr_keys) * 3;
 }
 
 void bpt_draw_helper(struct bptree* bpt, int lvl, int first)
 {
 	if (first) {
-	    for (int i=0; i < (4-lvl); ++i) printf("\t");
+	    for (int i=0; i < (10-lvl); ++i) printf("\t");
 	}
 
 	printf("[");
@@ -68,7 +66,6 @@ void bpt_draw_bfs(struct bptree* root)
 
 void bpt_draw(struct bptree* bpt)
 {
-    printf("--------------------------------------------------------------\n");
 	bpt_draw_bfs(bpt);
 	printf("\n");
 	bptree_sane(bpt);
@@ -76,8 +73,8 @@ void bpt_draw(struct bptree* bpt)
 
 int main()
 {
-	struct bptree* bpt = bptree_alloc(0, NULL);
-	assert(bptree_lookup(bpt, 0) == NULL || !"Lookup failed.");
+	struct bptree* bpt = bptree_alloc(0, (void*) 4);
+	assert(bptree_lookup(bpt, 0) == (void*)4 || !"Lookup failed.");
 	bpt_draw(bpt);
 
     bptree_insert(&bpt, 5, (void*) 4);
@@ -99,6 +96,16 @@ int main()
 	    bptree_insert(&bpt, i, (void*) (i * 2));
         bpt_draw(bpt);
 	}
+
+    srand(time(NULL));
+    for (int i=0; i < 100; ++i) {
+        uint64_t e = rand() % 300;
+        if (!bptree_lookup(bpt, e)) {
+            // printf("Inserting: %llu (lookup = %p)\n", e, bptree_lookup(bpt, e));
+            bptree_insert(&bpt, e, (void*) 4);
+            bpt_draw(bpt);
+        }
+    }
 
 	return 0;
 }

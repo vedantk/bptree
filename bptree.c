@@ -69,6 +69,9 @@ release0:
  */
 struct bptree* bptree_alloc(uint64_t key, void* val)
 {
+	if (!val) {
+		return NULL;
+	}
 	struct bptree* bpt = bpt_alloc();
 	bpt->nr_keys = 1;
 	bpt->keys[0] = key;
@@ -93,22 +96,19 @@ static inline int split(int x)
 static int bpt_bisect(struct bptree* bpt, uint64_t key)
 {
 	int low = 0;
-	int high = bpt->nr_keys - 1;
+	int high = bpt->nr_keys - 2;
 	int mid = low + ((high - low) / 2);
-	while (!(bpt->keys[mid] <= key &&
-		(mid + 1 < bpt->nr_keys) ? (key < bpt->keys[mid + 1]) : 1))
-	{
+	while (!(bpt->keys[mid] <= key && key < bpt->keys[mid + 1])) {
 		assert(low < high);
-		assert(mid + 1 < bpt->nr_keys ? 
-			bpt->keys[mid] != bpt->keys[mid + 1] : 1);
+		assert(bpt->keys[mid] != bpt->keys[mid + 1]);
 		if (bpt->keys[mid] < key) {
-			low = mid + 1;
+			low = mid;
 		} else if (bpt->keys[mid] > key) {
-			high = mid;
+			high = mid - 1;
 		} else {
 			return mid;
 		}
-		mid = low + ((high - low) / 2);
+		mid = low == mid ? (mid + 1) : low + ((high - low) / 2);
 	}
 	return mid;
 }
@@ -164,8 +164,12 @@ void* bptree_lookup(struct bptree* bpt, uint64_t key)
 {
 	int kidx, pidx;
 	bpt = bptree_search(bpt, key);
-	bpt_index(bpt, key, &kidx, &pidx);
-	return bpt->keys[kidx] == key ? bpt->pointers[pidx] : NULL;
+	if (bpt) {
+		bpt_index(bpt, key, &kidx, &pidx);
+		return bpt->keys[kidx] == key ? bpt->pointers[pidx] : NULL;
+	} else {
+		return NULL;
+	}
 }
 
 /*
@@ -221,7 +225,9 @@ static void bpt_insert_nonfull(struct bptree* bpt, uint64_t key, void* val)
 		bpt_index(bpt, key, &kidx, &pidx);
 		if (BPT_P(bpt, pidx)->nr_keys == ORDER - 1) {
 			bpt_split_child(bpt, pidx);
-			if (key > bpt->keys[kidx]) {
+			if (kidx + 1 < bpt->nr_keys && 
+				key > bpt->keys[kidx + 1]) 
+			{
 				++pidx;
 			}
 		}
@@ -238,6 +244,9 @@ static void bpt_insert_nonfull(struct bptree* bpt, uint64_t key, void* val)
  */
 void bptree_insert(struct bptree** root, uint64_t key, void* val)
 {
+	if (!val) {
+		return;
+	}
 	if ((*root)->nr_keys == ORDER - 1) {
 		struct bptree* new_root = bpt_alloc();
 		new_root->is_leaf = 0;
