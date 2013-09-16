@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include <queue>
+#include <vector>
 using namespace std;
 
 #define MAGIC ((void*) 0x42)
@@ -196,9 +197,9 @@ void test_iterate()
 
 void test_deletes()
 {
+#if ORDER == 4
     struct bptree* bpt = bptree_alloc(10, MAGIC);
 
-#if ORDER == 4
     bptree_insert(&bpt, 20, MAGIC);
     bptree_insert(&bpt, 5, MAGIC);
     bptree_insert(&bpt, 7, MAGIC);
@@ -217,14 +218,67 @@ void test_deletes()
     bptree_delete(&bpt, 5); bpt_draw(bpt);
     bptree_delete(&bpt, 5); bpt_draw(bpt);
     bptree_delete(&bpt, 7); bpt_draw(bpt);
+
+    bptree_sane(bpt, 1);
+    bptree_free(bpt);
 #endif
 
-    bptree_free(bpt);
+    uint64_t key;
+    struct bptree* B = bptree_alloc(42, VALUE(42));
+    for (uint64_t k=0; k < 100000; ++k) {
+        // Insert three random values.
+        key = rand() % 1000;
+        printf("Insert: %llu\n", key);
+        bptree_insert(&B, key, VALUE(key));
+        key = rand() % 1000;
+        printf("Insert: %llu\n", key);
+        bptree_insert(&B, key, VALUE(key));
+        key = rand() % 1000;
+        printf("Insert: %llu\n", key);
+        bptree_insert(&B, key, VALUE(key));
+
+        // Draw it for fun:
+        bpt_draw(B);
+
+        // Attempt to delete two random values.
+        key = rand() % 1000;
+        if (bptree_exists(B, key)) {
+            printf("Delete: %llu\n", key);
+            assert(bptree_delete(&B, key) == VALUE(key));
+        }
+        key = rand() % 1000;
+        if (bptree_exists(B, key)) {
+            printf("Delete: %llu\n", key);
+            assert(bptree_delete(&B, key) == VALUE(key));
+        }
+
+        if (k % 1000 == 0) {
+            bptree_sane(B, 1);
+        }
+    }
+
+    bptree_sane(B, 1);
+    bptree_free(B);
 }
 
 void test_insert_delete_iterate()
 {
+#if 0
+    vector<uint64_t> keys;
+    keys.push_back(0);
+    struct bptree* bpt = bptree_alloc(0, MAGIC);
 
+    for (int i=0; i < 1000000; ++i) {
+        keys.push_back(rand() % (~0UL - keys.back()));
+
+        if (i % 10000) {
+            for (uint64_t key : keys) {
+                assert(bptree_lookup(bpt, key) == MAGIC); 
+            }
+            bptree_sane(bpt, 1);
+        }
+    }
+#endif
 }
 
 int main()
