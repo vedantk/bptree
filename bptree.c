@@ -69,9 +69,6 @@ release0:
  */
 struct bptree* bptree_alloc(uint64_t key, void* val)
 {
-	if (!val) {
-		return NULL;
-	}
 	struct bptree* bpt = bpt_alloc();
 	bpt->nr_keys = 1;
 	bpt->keys[0] = key;
@@ -84,8 +81,7 @@ struct bptree* bptree_alloc(uint64_t key, void* val)
  */
 static inline int split(int x)
 {
-	x >>= 1;
-	return x & 1 ? x | 1 : x;
+	return (x >> 1) + (x & 1);
 }
 
 /*
@@ -158,6 +154,17 @@ struct bptree* bptree_next(struct bptree* bpt)
 }
 
 /*
+ * Find the leaf which contains the given key, or return NULL.
+ */
+struct bptree* bptree_exists(struct bptree* bpt, uint64_t key)
+{
+	int kidx, pidx;
+	bpt = bptree_search(bpt, key);
+	bpt_index(bpt, key, &kidx, &pidx);
+	return (bpt && bpt->keys[kidx] == key) ? bpt : NULL;
+}
+
+/*
  * Key/value lookup. 
  */
 void* bptree_lookup(struct bptree* bpt, uint64_t key)
@@ -170,6 +177,21 @@ void* bptree_lookup(struct bptree* bpt, uint64_t key)
 	} else {
 		return NULL;
 	}
+}
+
+/*
+ * Update the value of an existing key.
+ */
+void bptree_modify(struct bptree* bpt, uint64_t key, void* val)
+{
+	int kidx, pidx;
+	bpt = bptree_search(bpt, key);
+	if (bpt) {
+		bpt_index(bpt, key, &kidx, &pidx);
+		if (bpt->keys[kidx] == key) {
+			bpt->pointers[pidx] = val;
+		}
+	}	
 }
 
 /*
@@ -186,13 +208,14 @@ static void bpt_inject(struct bptree* bpt, int pidx, uint64_t key, void* val)
 		bpt->keys[i + 1] = bpt->keys[i];
 	}
 	bpt->keys[pidx] = key;
+	++bpt->nr_keys;
+
 	struct bptree* pred = bpt->pointers[pidx];
 	if (!bpt->is_leaf && pred && pred->is_leaf) {
 		struct bptree* succ = bpt->pointers[pidx + 1];
 		succ->bpt_next = pred->bpt_next;
 		pred->bpt_next = succ;
 	}
-	++bpt->nr_keys;
 }
 
 /*
@@ -203,8 +226,8 @@ static void bpt_split_child(struct bptree* parent, int pidx)
 	struct bptree* succ = bpt_alloc();
 	struct bptree* pred = parent->pointers[pidx];
 	succ->is_leaf = pred->is_leaf;
-	pred->nr_keys = (ORDER - 1) / 2;
-	succ->nr_keys = (ORDER - 1) - pred->nr_keys;
+	succ->nr_keys = split(ORDER - 1);
+	pred->nr_keys = (ORDER - 1) - succ->nr_keys;
 
 	for (int i = 0; i < succ->nr_keys; ++i) {
 		succ->keys[i] = pred->keys[i + pred->nr_keys];
@@ -225,18 +248,27 @@ static void bpt_insert_nonfull(struct bptree* bpt, uint64_t key, void* val)
 		bpt_index(bpt, key, &kidx, &pidx);
 		if (BPT_P(bpt, pidx)->nr_keys == ORDER - 1) {
 			bpt_split_child(bpt, pidx);
-			if (kidx + 1 < bpt->nr_keys && 
-				key > bpt->keys[kidx + 1]) 
-			{
+			assert(kidx + 1 < bpt->nr_keys);
+			if (key > bpt->keys[kidx + 1]) {
 				++pidx;
 			}
 		}
+
+		assert(kidx < bpt->nr_keys);
+		if (bpt->keys[kidx] == key) {
+			return;
+		}
+
 		bpt = bpt->pointers[pidx];
 		assert(bpt->nr_keys >= split(ORDER) - 1);
 		assert(bpt->nr_keys < ORDER);
 	}
+
 	bpt_index(bpt, key, &kidx, &pidx);
-	bpt_inject(bpt, pidx, key, val);
+	assert(kidx < bpt->nr_keys);
+	if (bpt->keys[kidx] != key) {
+		bpt_inject(bpt, pidx, key, val);
+	}
 }
 
 /*
@@ -244,9 +276,6 @@ static void bpt_insert_nonfull(struct bptree* bpt, uint64_t key, void* val)
  */
 void bptree_insert(struct bptree** root, uint64_t key, void* val)
 {
-	if (!val) {
-		return;
-	}
 	if ((*root)->nr_keys == ORDER - 1) {
 		struct bptree* new_root = bpt_alloc();
 		new_root->is_leaf = 0;
@@ -271,7 +300,7 @@ static void bpt_eject(struct bptree* bpt, int kidx, int pidx)
 		bpt->pointers[i] = bpt->pointers[i + 1];
 	}
 	struct bptree* succ = bpt->pointers[pidx];
-	if (pidx > 0 && succ->is_leaf) {
+	if (!bpt->is_leaf && pidx > 0 && succ && succ->is_leaf) {
 		struct bptree* pred = bpt->pointers[pidx - 1];
 		pred->bpt_next = succ;
 	}
@@ -287,7 +316,7 @@ static void bpt_left_rotate(struct bptree** parent, int kidx, int donor_pidx)
 	uint64_t kprime = donor->keys[donor->nr_keys - 1];
 	(*parent)->keys[kidx] = kprime;
 	void* val = bptree_delete(BPT_PREF(parent, donor_pidx), kprime);
-	bptree_insert(BPT_PREF(parent, donor_pidx + 1), kprime, val);
+	bpt_insert_nonfull(BPT_P(*parent, donor_pidx + 1), kprime, val);
 }
 
 /*
@@ -299,7 +328,7 @@ static void bpt_right_rotate(struct bptree** parent, int kidx, int donor_pidx)
 	uint64_t kprime = donor->keys[0];
 	(*parent)->keys[kidx] = donor->keys[1];
 	void* val = bptree_delete(BPT_PREF(parent, donor_pidx), kprime);
-	bptree_insert(BPT_PREF(parent, donor_pidx - 1), kprime, val);
+	bpt_insert_nonfull(BPT_P(*parent, donor_pidx - 1), kprime, val);
 }
 
 /*
@@ -320,10 +349,11 @@ static void bpt_merge(struct bptree* parent, int kidx1, int pidx1)
 	uint64_t key = parent->keys[kidx1];
 	struct bptree* pred = parent->pointers[pidx1 - 1];
 	struct bptree* succ = parent->pointers[pidx1];
-	assert(pred->nr_keys == split(ORDER) - 1);
-	assert(succ->nr_keys == split(ORDER) - 1);
+	assert(pred->nr_keys >= split(ORDER) - 1);
+	assert(succ->nr_keys >= split(ORDER) - 1);
+	assert(succ->nr_keys + pred->nr_keys <= ORDER - 1);
+	assert(succ->is_leaf || succ->pointers[0] == NULL);
 	bpt_eject(parent, kidx1, pidx1);
-	bpt_inject(pred, pred->nr_keys, key, succ->pointers[0]);
 	for (int i = 0; i < succ->nr_keys; ++i) {
 		bpt_inject(pred, pred->nr_keys, succ->keys[i],
 			succ->pointers[i + 1]);
@@ -332,9 +362,9 @@ static void bpt_merge(struct bptree* parent, int kidx1, int pidx1)
 }
 
 /*
- * Remove a key, restructuring the tree as needed.
+ * Perform deletions on subtrees.
  */
-void* bptree_delete(struct bptree** bpt, uint64_t key)
+void* bpt_delete(struct bptree* bpt, uint64_t key)
 {
 	int kidx, pidx;
 	bpt_index((*bpt), key, &kidx, &pidx);
@@ -345,25 +375,42 @@ void* bptree_delete(struct bptree** bpt, uint64_t key)
 	} else if ((*bpt)->keys[kidx] == key && !(*bpt)->is_leaf) {
 		assert(pidx > 0);
 		assert((*bpt)->nr_keys >= 1);
+		assert(pidx <= (*bpt)->nr_keys);
 		struct bptree* pred = BPT_P(*bpt, pidx - 1);
-		struct bptree* succ = BPT_P(*bpt, pidx);
-		if (succ->nr_keys >= split(ORDER)) {
-			assert(succ->keys[0] == key);
+		struct bptree* curr = BPT_P(*bpt, pidx);
+		struct bptree* succ = pidx == (*bpt)->nr_keys ? 
+					NULL : BPT_P(*bpt, pidx + 1);
+		if (curr->nr_keys >= split(ORDER)) {
 			val = bptree_delete(BPT_PREF(bpt, pidx), key);
 			(*bpt)->keys[kidx] = BPT_P(*bpt, pidx)->keys[0];
-		} else if (pred->nr_keys >= split(ORDER)) {
-			assert(succ->nr_keys == split(ORDER) - 1);
+		} else if (pred && pred->nr_keys >= split(ORDER)) {
+			assert(curr->nr_keys == split(ORDER) - 1);
 			bpt_left_rotate(bpt, kidx, pidx - 1);
 			val = bptree_delete(BPT_PREF(bpt, pidx), key);
-		} else {
+		} else if (succ && succ->nr_keys >= split(ORDER)) {
+			assert(curr->nr_keys == split(ORDER) - 1);
+			assert(!pred || pred->nr_keys == split(ORDER) - 1);
+			bpt_right_rotate(bpt, kidx + 1, pidx + 1);
+			val = bptree_delete(BPT_PREF(bpt, pidx), key);
+			(*bpt)->keys[kidx] = BPT_P(*bpt, pidx)->keys[0];
+		} else if (pred) {
 			bpt_merge(*bpt, kidx, pidx);
 			val = bptree_delete(BPT_PREF(bpt, pidx - 1), key);
+		} else if (succ) {
+			bpt_merge(*bpt, kidx + 1, pidx + 1);
+			val = bptree_delete(BPT_PREF(bpt, pidx), key);
+		} else {
+			val = bptree_delete(BPT_PREF(bpt, pidx), key);
 		}
 	} else if (!(*bpt)->is_leaf) {
-		struct bptree *rhs, *lhs;
+		struct bptree *rhs = NULL, *lhs = NULL;
 		struct bptree* child = BPT_P(*bpt, pidx);
+		if (!child) {
+			return NULL;
+		}
 		if (child->nr_keys == split(ORDER) - 1) {
 			int lhs_donor = pidx - 1 >= 0 && 
+				(*bpt)->pointers[pidx - 1] &&
 				(lhs = (*bpt)->pointers[pidx - 1])->nr_keys >= 
 					split(ORDER);
 			int rhs_exists = pidx + 1 <= (*bpt)->nr_keys;
@@ -376,19 +423,31 @@ void* bptree_delete(struct bptree** bpt, uint64_t key)
 				bpt_right_rotate(bpt, kidx, pidx + 1);
 			} else if (rhs_exists) {
 				bpt_merge((*bpt), kidx + 1, pidx + 1);
-			} else {
+			} else if (lhs) {
 				bpt_merge((*bpt), kidx, pidx);
-			}
-
-			if ((*bpt)->nr_keys == 0) {
-				struct bptree* old = *bpt;
-				*bpt = old->pointers[0];
-				bpt_free(old);
+			} else {
+				assert(false && "Key balancing failed.");
+				return NULL;
 			}
 		}
+
 		val = bptree_delete(BPT_PREF(bpt, pidx), key);
 	}
+
+	if ((*bpt)->nr_keys == 0) {
+		struct bptree* old = *bpt;
+		*bpt = old->pointers[old->pointers[0] ? 0 : 1];
+		bpt_free(old);
+	}
+
 	return val;
+}
+
+/*
+ * Remove a key, restructuring the tree as needed.
+ */
+void* bptree_delete(struct bptree** bpt, uint64_t key)
+{
 }
 
 void bptree_free(struct bptree* bpt)
@@ -397,27 +456,11 @@ void bptree_free(struct bptree* bpt)
 		bpt_free(bpt);
 	} else {
 		for (int i = 0; i <= bpt->nr_keys; ++i) {
-			bptree_free(bpt->pointers[i]);
-			bpt_free(bpt->pointers[i]);
+			if (bpt->pointers[i]) {
+				bptree_free(bpt->pointers[i]);
+			}
 		}
-	}
-}
-
-void bptree_sane(struct bptree* bpt)
-{
-	for (int i=1; i < bpt->nr_keys; ++i) {
-		assert(bpt->keys[i] > bpt->keys[i-1]);
-	}
-	if (!bpt->is_leaf) {
-		for (int i=0; i <= bpt->nr_keys; ++i) {
-			if (BPT_P(bpt, i))
-				bptree_sane(BPT_P(bpt, i));
-		}
-		for (int i=1; i <= bpt->nr_keys; ++i) {
-			if (BPT_P(bpt, i) && BPT_P(bpt, i-1))
-				assert(BPT_P(bpt, i)->keys[0] > 
-					BPT_P(bpt, i-1)->keys[BPT_P(bpt, i-1)->nr_keys - 1]);
-		}
+		bpt_free(bpt);
 	}
 }
 

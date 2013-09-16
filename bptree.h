@@ -37,15 +37,32 @@ struct bptree {
 	uint16_t nr_keys : 15;
 } __attribute__((packed));
 
+/* Create a tree with an initial tuple. */
 struct bptree* bptree_alloc(uint64_t key, void* val);
-struct bptree* bptree_search(struct bptree* bpt, uint64_t key);
-struct bptree* bptree_next(struct bptree* bpt);
-void* bptree_lookup(struct bptree* bpt, uint64_t key);
-void bptree_insert(struct bptree** bpt, uint64_t key, void* val);
-void* bptree_delete(struct bptree** bpt, uint64_t key);
-void bptree_free(struct bptree* bpt);
 
-void bptree_sane(struct bptree* bpt);
+/* Find the leaf containing a key, or return NULL. */
+struct bptree* bptree_exists(struct bptree* bpt, uint64_t key);
+
+/* Update the value of a key in the given subtree. */
+void bptree_modify(struct bptree* bpt, uint64_t key, void* val);
+
+/* Insert a new tuple into the tree (with a unique key). */
+void bptree_insert(struct bptree** bpt, uint64_t key, void* val);
+
+/* Lookup the value corresponding to a key (NULL if nonexistent). */
+void* bptree_lookup(struct bptree* bpt, uint64_t key);
+
+/* Find the closest leaf node to a key. */
+struct bptree* bptree_search(struct bptree* bpt, uint64_t key);
+
+/* Find the leaf node following a given node. */
+struct bptree* bptree_next(struct bptree* bpt);
+
+/* Delete a tuple from the tree, returning its associated value. */
+void* bptree_delete(struct bptree** bpt, uint64_t key);
+
+/* Destroy the tree. */
+void bptree_free(struct bptree* bpt);
 
 #ifdef __cplusplus__
 } /* extern "C" */
