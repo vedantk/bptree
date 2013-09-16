@@ -1,0 +1,8 @@
+bptree
+======
+
+This is an in-memory B+ tree implementation which uses one-pass algorithms to 
+implement insertion and deletion. It's bit-thrifty, commented, and tested.
+
+(Speaking of tests, deletion hasn't been properly implemented yet. I've decided
+to toss this code online to motivate myself to finish this up.)
