@@ -197,7 +197,8 @@ void test_iterate()
 void test_deletes()
 {
     struct bptree* bpt = bptree_alloc(10, MAGIC);
-    assert(ORDER == 4 && "These tests were designed for ORDER=4.");
+
+#if ORDER == 4
     bptree_insert(&bpt, 20, MAGIC);
     bptree_insert(&bpt, 5, MAGIC);
     bptree_insert(&bpt, 7, MAGIC);
@@ -216,6 +217,7 @@ void test_deletes()
     bptree_delete(&bpt, 5); bpt_draw(bpt);
     bptree_delete(&bpt, 5); bpt_draw(bpt);
     bptree_delete(&bpt, 7); bpt_draw(bpt);
+#endif
 
     bptree_free(bpt);
 }

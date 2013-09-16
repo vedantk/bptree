@@ -288,6 +288,8 @@ void bptree_insert(struct bptree** root, uint64_t key, void* val)
 	}
 }
 
+static void* bpt_delete(struct bptree* bpt, uint64_t key);
+
 /*
  * Remove a key-value pair contained within a node.
  */
@@ -310,25 +312,25 @@ static void bpt_eject(struct bptree* bpt, int kidx, int pidx)
 /*
  * Move the last key in the left donor into the parent at kidx.
  */
-static void bpt_left_rotate(struct bptree** parent, int kidx, int donor_pidx)
+static void bpt_left_rotate(struct bptree* parent, int kidx, int donor_pidx)
 {
-	struct bptree* donor = BPT_P(*parent, donor_pidx);
+	struct bptree* donor = BPT_P(parent, donor_pidx);
 	uint64_t kprime = donor->keys[donor->nr_keys - 1];
-	(*parent)->keys[kidx] = kprime;
-	void* val = bptree_delete(BPT_PREF(parent, donor_pidx), kprime);
-	bpt_insert_nonfull(BPT_P(*parent, donor_pidx + 1), kprime, val);
+	parent->keys[kidx] = kprime;
+	void* val = bpt_delete(BPT_P(parent, donor_pidx), kprime);
+	bpt_insert_nonfull(BPT_P(parent, donor_pidx + 1), kprime, val);
 }
 
 /*
  * Move the second key in the right donor into the parent at kidx.
  */
-static void bpt_right_rotate(struct bptree** parent, int kidx, int donor_pidx)
+static void bpt_right_rotate(struct bptree* parent, int kidx, int donor_pidx)
 {
-	struct bptree* donor = BPT_P(*parent, donor_pidx);
+	struct bptree* donor = BPT_P(parent, donor_pidx);
 	uint64_t kprime = donor->keys[0];
-	(*parent)->keys[kidx] = donor->keys[1];
-	void* val = bptree_delete(BPT_PREF(parent, donor_pidx), kprime);
-	bpt_insert_nonfull(BPT_P(*parent, donor_pidx - 1), kprime, val);
+	parent->keys[kidx] = donor->keys[1];
+	void* val = bptree_delete(BPT_P(parent, donor_pidx), kprime);
+	bpt_insert_nonfull(BPT_P(parent, donor_pidx - 1), kprime, val);
 }
 
 /*
@@ -362,7 +364,7 @@ static void bpt_merge(struct bptree* parent, int kidx1, int pidx1)
 }
 
 /*
- * Perform deletions on subtrees.
+ * Perform deletions on non-root trees.
  */
 void* bpt_delete(struct bptree* bpt, uint64_t key)
 {
@@ -448,6 +450,21 @@ void* bpt_delete(struct bptree* bpt, uint64_t key)
  */
 void* bptree_delete(struct bptree** bpt, uint64_t key)
 {
+	void* val = NULL;
+	struct bptree* root = *bpt;
+	if (root->is_leaf) {
+		int kidx, pidx;
+		bpt_index(root, key, &kidx, &pidx);
+		if (root->keys[kidx] == key) {
+			val = root->pointers[pidx];
+			if (root->nr_keys == 1) {
+				root->keys[kidx] = 0;
+				root->pointers[pidx] = NULL;
+			} else {
+				bpt_eject(root, kidx, pidx);
+			}
+		}
+	}
 }
 
 void bptree_free(struct bptree* bpt)
