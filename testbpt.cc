@@ -230,9 +230,11 @@ void test_deletes()
         key = rand() % 1000;
         printf("Insert: %llu\n", key);
         bptree_insert(&B, key, VALUE(key));
+        bpt_draw(B);
         key = rand() % 1000;
         printf("Insert: %llu\n", key);
         bptree_insert(&B, key, VALUE(key));
+        bpt_draw(B);
         key = rand() % 1000;
         printf("Insert: %llu\n", key);
         bptree_insert(&B, key, VALUE(key));

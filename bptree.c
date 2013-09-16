@@ -248,10 +248,7 @@ static void bpt_insert_nonfull(struct bptree* bpt, uint64_t key, void* val)
 		bpt_index(bpt, key, &kidx, &pidx);
 		if (BPT_P(bpt, pidx)->nr_keys == ORDER - 1) {
 			bpt_split_child(bpt, pidx);
-			assert(kidx + 1 < bpt->nr_keys);
-			if (key > bpt->keys[kidx + 1]) {
-				++pidx;
-			}
+			bpt_index(bpt, key, &kidx, &pidx);
 		}
 
 		assert(kidx < bpt->nr_keys);
