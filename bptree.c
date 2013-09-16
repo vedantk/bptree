@@ -364,17 +364,27 @@ static void bpt_merge(struct bptree* parent, int kidx1, int pidx1)
 }
 
 /*
- * Perform deletions on non-root trees.
+ * Perform deletions on subtrees.
  */
-void* bpt_delete(struct bptree* bpt, uint64_t key)
+static void* bpt_delete(struct bptree* bpt, uint64_t key)
 {
 	int kidx, pidx;
-	bpt_index((*bpt), key, &kidx, &pidx);
+	bpt_index(bpt, key, &kidx, &pidx);
+	bpt_delete_noindex(bpt, key, kidx, pidx);
+}
+
+/*
+ * Perform deletions using the provided indices for victim nodes.
+ */
+static void* bpt_delete_noindex(struct bptree* bpt, uint64_t key, 
+				int kidx, int pidx)
+{
 	void* val = NULL;
-	if ((*bpt)->keys[kidx] == key && (*bpt)->is_leaf) {
+	int match = bpt->keys[kidx] == key;
+	if (match && (*bpt)->is_leaf) {
 		val = (*bpt)->pointers[pidx];
 		bpt_eject((*bpt), kidx, pidx);
-	} else if ((*bpt)->keys[kidx] == key && !(*bpt)->is_leaf) {
+	} else if (match && !(*bpt)->is_leaf) {
 		assert(pidx > 0);
 		assert((*bpt)->nr_keys >= 1);
 		assert(pidx <= (*bpt)->nr_keys);
@@ -436,12 +446,6 @@ void* bpt_delete(struct bptree* bpt, uint64_t key)
 		val = bptree_delete(BPT_PREF(bpt, pidx), key);
 	}
 
-	if ((*bpt)->nr_keys == 0) {
-		struct bptree* old = *bpt;
-		*bpt = old->pointers[old->pointers[0] ? 0 : 1];
-		bpt_free(old);
-	}
-
 	return val;
 }
 
@@ -452,10 +456,13 @@ void* bptree_delete(struct bptree** bpt, uint64_t key)
 {
 	void* val = NULL;
 	struct bptree* root = *bpt;
+	int kidx, pidx;
+	bpt_index(root, key, &kidx, &pidx);
+	int match = root->keys[kidx] == key;
+	int child = root->pointers[pidx] != NULL;
+
 	if (root->is_leaf) {
-		int kidx, pidx;
-		bpt_index(root, key, &kidx, &pidx);
-		if (root->keys[kidx] == key) {
+		if (match) {
 			val = root->pointers[pidx];
 			if (root->nr_keys == 1) {
 				root->keys[kidx] = 0;
@@ -464,7 +471,23 @@ void* bptree_delete(struct bptree** bpt, uint64_t key)
 				bpt_eject(root, kidx, pidx);
 			}
 		}
+	} else {
+		if (!match || root->nr_keys > 1) {
+			val = bpt_delete_noindex(bpt, key, kidx, pidx);
+		} else if (match && root->nr_keys == 1) {
+			if (root->nr_keys == 1) {
+				assert(root->pointers[0] && root->pointers[1]);
+				bpt_merge(root, 0, 1);
+				*bpt = root->pointers[0];
+				bpt_free(root);
+				root = *bpt;
+				val = bpt_delete(root, key);
+			} else {
+				val = bpt_delete_noindex(root, key, kidx, pidx);
+			}
+		}
 	}
+	return val;
 }
 
 void bptree_free(struct bptree* bpt)
