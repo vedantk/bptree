@@ -329,7 +329,7 @@ static void bpt_rotate_left(struct bptree* parent, int kidx, int donor_pidx)
 	struct bptree* donor = BPT_P(parent, donor_pidx);
 	uint64_t kprime = donor->keys[0];
 	parent->keys[kidx] = donor->keys[1];
-	void* val = bptree_delete(BPT_P(parent, donor_pidx), kprime);
+	void* val = bpt_delete(BPT_P(parent, donor_pidx), kprime);
 	bpt_insert_nonfull(BPT_P(parent, donor_pidx - 1), kprime, val);
 }
 
@@ -348,7 +348,6 @@ static void bpt_free(struct bptree* bpt)
  */
 static void bpt_merge(struct bptree* parent, int kidx1, int pidx1)
 {
-	uint64_t key = parent->keys[kidx1];
 	struct bptree* pred = parent->pointers[pidx1 - 1];
 	struct bptree* succ = parent->pointers[pidx1];
 	assert(pred->nr_keys >= split(ORDER) - 1);
@@ -363,6 +362,9 @@ static void bpt_merge(struct bptree* parent, int kidx1, int pidx1)
 	bpt_free(succ);
 }
 
+static void* bpt_delete_noindex(struct bptree* bpt, uint64_t key,
+				int kidx, int pidx);
+
 /*
  * Perform deletions on subtrees.
  */
@@ -370,7 +372,7 @@ static void* bpt_delete(struct bptree* bpt, uint64_t key)
 {
 	int kidx, pidx;
 	bpt_index(bpt, key, &kidx, &pidx);
-	bpt_delete_noindex(bpt, key, kidx, pidx);
+	return bpt_delete_noindex(bpt, key, kidx, pidx);
 }
 
 /*
@@ -456,7 +458,6 @@ void* bptree_delete(struct bptree** bpt, uint64_t key)
 	int kidx, pidx;
 	bpt_index(root, key, &kidx, &pidx);
 	int match = root->keys[kidx] == key;
-	int child = root->pointers[pidx] != NULL;
 
 	if (root->is_leaf) {
 		if (match) {
@@ -470,7 +471,7 @@ void* bptree_delete(struct bptree** bpt, uint64_t key)
 		}
 	} else {
 		if (!match || root->nr_keys > 1) {
-			val = bpt_delete_noindex(bpt, key, kidx, pidx);
+			val = bpt_delete_noindex(*bpt, key, kidx, pidx);
 		} else if (match && root->nr_keys == 1) {
 			if (root->nr_keys == 1) {
 				assert(root->pointers[0] && root->pointers[1]);
