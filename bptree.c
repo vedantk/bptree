@@ -414,34 +414,33 @@ static void* bpt_delete_noindex(struct bptree* bpt, uint64_t key,
 		}
 	} else if (!bpt->is_leaf) {
 		struct bptree *rhs = NULL, *lhs = NULL;
-		struct bptree* child = BPT_P(*bpt, pidx);
+		struct bptree* child = BPT_P(bpt, pidx);
 		if (!child) {
 			return NULL;
 		}
+
 		if (child->nr_keys == split(ORDER) - 1) {
 			int lhs_donor = pidx - 1 >= 0 && 
-				(*bpt)->pointers[pidx - 1] &&
-				(lhs = (*bpt)->pointers[pidx - 1])->nr_keys >= 
-					split(ORDER);
-			int rhs_exists = pidx + 1 <= (*bpt)->nr_keys;
-			int rhs_donor = rhs_exists &&
-				(rhs = (*bpt)->pointers[pidx + 1])->nr_keys >=
-					split(ORDER);
+				(lhs = bpt->pointers[pidx - 1]) &&
+				lhs->nr_keys >= split(ORDER);
+			int rhs_donor = pidx + 1 <= bpt->nr_keys &&
+				(rhs = bpt->pointers[pidx + 1]) &&
+				rhs->nr_keys >= split(ORDER);
 			if (lhs_donor) {
 				bpt_rotate_right(bpt, kidx, pidx - 1);
 			} else if (rhs_donor) {
 				bpt_rotate_left(bpt, kidx, pidx + 1);
-			} else if (rhs_exists) {
-				bpt_merge((*bpt), kidx + 1, pidx + 1);
+			} else if (rhs) {
+				bpt_merge(bpt, kidx + 1, pidx + 1);
 			} else if (lhs) {
-				bpt_merge((*bpt), kidx, pidx);
+				bpt_merge(bpt, kidx, pidx);
 			} else {
-				assert(false && "Key balancing failed.");
+				assert(0 && "Internal node is degenerate!");
 				return NULL;
 			}
 		}
 
-		val = bptree_delete(BPT_PREF(bpt, pidx), key);
+		val = bpt_delete(BPT_P(bpt, pidx), key);
 	}
 
 	return val;
