@@ -470,19 +470,15 @@ void* bptree_delete(struct bptree** bpt, uint64_t key)
 			}
 		}
 	} else {
-		if (!match || root->nr_keys > 1) {
-			val = bpt_delete_noindex(*bpt, key, kidx, pidx);
-		} else if (match && root->nr_keys == 1) {
-			if (root->nr_keys == 1) {
-				assert(root->pointers[0] && root->pointers[1]);
-				bpt_merge(root, 0, 1);
-				*bpt = root->pointers[0];
-				bpt_free(root);
-				root = *bpt;
-				val = bpt_delete(root, key);
-			} else {
-				val = bpt_delete_noindex(root, key, kidx, pidx);
-			}
+		if (root->nr_keys == 1) {
+			assert(root->pointers[0] && root->pointers[1]);
+			bpt_merge(root, 0, 1);
+			*bpt = root->pointers[0];
+			bpt_free(root);
+			root = *bpt;
+			val = bpt_delete(root, key);
+		} else {
+			val = bpt_delete_noindex(root, key, kidx, pidx);
 		}
 	}
 	return val;
