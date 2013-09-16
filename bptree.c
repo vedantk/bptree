@@ -312,7 +312,7 @@ static void bpt_eject(struct bptree* bpt, int kidx, int pidx)
 /*
  * Move the last key in the left donor into the parent at kidx.
  */
-static void bpt_left_rotate(struct bptree* parent, int kidx, int donor_pidx)
+static void bpt_rotate_right(struct bptree* parent, int kidx, int donor_pidx)
 {
 	struct bptree* donor = BPT_P(parent, donor_pidx);
 	uint64_t kprime = donor->keys[donor->nr_keys - 1];
@@ -324,7 +324,7 @@ static void bpt_left_rotate(struct bptree* parent, int kidx, int donor_pidx)
 /*
  * Move the second key in the right donor into the parent at kidx.
  */
-static void bpt_right_rotate(struct bptree* parent, int kidx, int donor_pidx)
+static void bpt_rotate_left(struct bptree* parent, int kidx, int donor_pidx)
 {
 	struct bptree* donor = BPT_P(parent, donor_pidx);
 	uint64_t kprime = donor->keys[0];
@@ -381,40 +381,38 @@ static void* bpt_delete_noindex(struct bptree* bpt, uint64_t key,
 {
 	void* val = NULL;
 	int match = bpt->keys[kidx] == key;
-	if (match && (*bpt)->is_leaf) {
-		val = (*bpt)->pointers[pidx];
-		bpt_eject((*bpt), kidx, pidx);
-	} else if (match && !(*bpt)->is_leaf) {
-		assert(pidx > 0);
-		assert((*bpt)->nr_keys >= 1);
-		assert(pidx <= (*bpt)->nr_keys);
-		struct bptree* pred = BPT_P(*bpt, pidx - 1);
-		struct bptree* curr = BPT_P(*bpt, pidx);
-		struct bptree* succ = pidx == (*bpt)->nr_keys ? 
-					NULL : BPT_P(*bpt, pidx + 1);
+	if (match && bpt->is_leaf) {
+		val = bpt->pointers[pidx];
+		bpt_eject(bpt, kidx, pidx);
+	} else if (match && !bpt->is_leaf) {
+		assert(bpt->nr_keys >= 1);
+		assert(pidx <= bpt->nr_keys);
+		struct bptree* curr = BPT_P(bpt, pidx);
+		struct bptree* pred = pidx == 0 ?
+					NULL : BPT_P(bpt, pidx - 1);
+		struct bptree* succ = pidx == bpt->nr_keys ? 
+					NULL : BPT_P(bpt, pidx + 1);
 		if (curr->nr_keys >= split(ORDER)) {
-			val = bptree_delete(BPT_PREF(bpt, pidx), key);
-			(*bpt)->keys[kidx] = BPT_P(*bpt, pidx)->keys[0];
+			val = bpt_delete(BPT_P(bpt, pidx), key);
+			bpt->keys[kidx] = BPT_P(bpt, pidx)->keys[0];
 		} else if (pred && pred->nr_keys >= split(ORDER)) {
-			assert(curr->nr_keys == split(ORDER) - 1);
-			bpt_left_rotate(bpt, kidx, pidx - 1);
-			val = bptree_delete(BPT_PREF(bpt, pidx), key);
+			bpt_rotate_right(bpt, kidx, pidx - 1);
+			val = bpt_delete(BPT_P(bpt, pidx), key);
 		} else if (succ && succ->nr_keys >= split(ORDER)) {
-			assert(curr->nr_keys == split(ORDER) - 1);
 			assert(!pred || pred->nr_keys == split(ORDER) - 1);
-			bpt_right_rotate(bpt, kidx + 1, pidx + 1);
-			val = bptree_delete(BPT_PREF(bpt, pidx), key);
-			(*bpt)->keys[kidx] = BPT_P(*bpt, pidx)->keys[0];
+			bpt_rotate_left(bpt, kidx + 1, pidx + 1);
+			val = bpt_delete(BPT_P(bpt, pidx), key);
+			bpt->keys[kidx] = BPT_P(bpt, pidx)->keys[0];
 		} else if (pred) {
-			bpt_merge(*bpt, kidx, pidx);
-			val = bptree_delete(BPT_PREF(bpt, pidx - 1), key);
+			bpt_merge(bpt, kidx, pidx);
+			val = bpt_delete(BPT_P(bpt, pidx - 1), key);
 		} else if (succ) {
-			bpt_merge(*bpt, kidx + 1, pidx + 1);
-			val = bptree_delete(BPT_PREF(bpt, pidx), key);
+			bpt_merge(bpt, kidx + 1, pidx + 1);
+			val = bpt_delete(BPT_P(bpt, pidx), key);
 		} else {
-			val = bptree_delete(BPT_PREF(bpt, pidx), key);
+			assert(!"Internal node key deletion failed!");
 		}
-	} else if (!(*bpt)->is_leaf) {
+	} else if (!bpt->is_leaf) {
 		struct bptree *rhs = NULL, *lhs = NULL;
 		struct bptree* child = BPT_P(*bpt, pidx);
 		if (!child) {
@@ -430,9 +428,9 @@ static void* bpt_delete_noindex(struct bptree* bpt, uint64_t key,
 				(rhs = (*bpt)->pointers[pidx + 1])->nr_keys >=
 					split(ORDER);
 			if (lhs_donor) {
-				bpt_left_rotate(bpt, kidx, pidx - 1);
+				bpt_rotate_right(bpt, kidx, pidx - 1);
 			} else if (rhs_donor) {
-				bpt_right_rotate(bpt, kidx, pidx + 1);
+				bpt_rotate_left(bpt, kidx, pidx + 1);
 			} else if (rhs_exists) {
 				bpt_merge((*bpt), kidx + 1, pidx + 1);
 			} else if (lhs) {
