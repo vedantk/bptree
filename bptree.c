@@ -434,7 +434,7 @@ static void* bpt_delete_noindex(struct bptree* bpt, uint64_t key,
 			} else if (lhs) {
 				bpt_merge(bpt, kidx, pidx);
 			} else {
-				assert(0 && "Internal node is degenerate!");
+				assert(!"Internal node is degenerate!");
 				return NULL;
 			}
 		}
